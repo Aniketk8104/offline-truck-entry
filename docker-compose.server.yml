@@ -1,0 +1,85 @@
+# Server deployment: the same API and Postgres, behind an existing Traefik reverse proxy that gives
+# HTTPS with a Let's Encrypt certificate. In this folder: docker compose -f docker-compose.server.yml up -d --build
+# Needs a .env next to this file (never committed) with:
+#   POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, API_KEY   long random values for the secrets
+#   PUBLIC_HOST            the API's domain; its DNS A record points to this server
+#   PROXY_NETWORK          the Docker network Traefik uses to reach containers
+#   TRAEFIK_ENTRYPOINT     Traefik's HTTPS entry point (default websecure)
+#   TRAEFIK_CERTRESOLVER   Traefik's Let's Encrypt resolver (default letsencrypt)
+name: offline-truck-entry
+
+services:
+  # Unique service names: the API joins the proxy's shared network, where a plain name such as
+  # "api" or "db" could clash with another project's containers.
+  truck-entry-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
+    # No published port: only the API, on the private network, can reach the database.
+    networks: [private]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "localhost", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Limits, so this demo can never take CPU or memory from the other apps on the server.
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 256M }
+    logging:
+      options: { max-size: 10m, max-file: "3" } # logs can't fill the disk
+
+  truck-entry-api:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: truck-entry-db
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      API_KEY: ${API_KEY:?set API_KEY in .env}
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads:/app/uploads
+    networks: [private, proxy]
+    depends_on:
+      truck-entry-db:
+        condition: service_healthy
+    labels:
+      # Traefik reads these from this container: HTTPS requests for PUBLIC_HOST go to port 3000.
+      # The route exists only while this container exists; nothing in Traefik's own config changes.
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK}
+      - traefik.http.routers.truck-entry.rule=Host(`${PUBLIC_HOST:?set PUBLIC_HOST in .env}`)
+      - traefik.http.routers.truck-entry.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.truck-entry.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      - traefik.http.services.truck-entry.loadbalancer.server.port=3000
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:3000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 256M }
+    logging:
+      options: { max-size: 10m, max-file: "3" }
+
+networks:
+  private:
+    internal: true # no internet access from this network
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:?set PROXY_NETWORK in .env}
+
+volumes:
+  db-data:
+  uploads:

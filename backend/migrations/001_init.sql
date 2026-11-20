@@ -22,7 +22,7 @@ CREATE TABLE submissions (
   plant_code          TEXT NOT NULL REFERENCES plants (code),
   person_name         TEXT NOT NULL CHECK (length(trim(person_name)) BETWEEN 2 AND 100),
   truck_number        TEXT NOT NULL CHECK (truck_number ~ '^[A-Z0-9]+$'),  -- cleaned up by the app
-  photo_path          TEXT NOT NULL,            -- uploads/<id>.<ext> on disk; the image is not in the DB
+  photo_path          TEXT NOT NULL,            -- file name in the uploads folder, e.g. <id>.jpg; the image is not in the DB
   photo_mime          TEXT NOT NULL,
   photo_bytes         INT  NOT NULL,
   latitude            NUMERIC(9,6) CHECK (latitude BETWEEN -90 AND 90),

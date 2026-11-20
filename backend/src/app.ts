@@ -4,6 +4,7 @@ import { requireApiKey } from './middleware/apiKey';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
 import { plantsRouter } from './routes/plants';
+import { submissionsRouter } from './routes/submissions';
 
 // Builds the app without starting a server, so tests can send requests to it directly.
 export function createApp() {
@@ -21,6 +22,7 @@ export function createApp() {
   // Everything under /api needs the API key.
   app.use('/api', requireApiKey);
   app.use('/api/plants', plantsRouter);
+  app.use('/api/submissions', submissionsRouter);
 
   app.use(notFound);
   app.use(errorHandler);

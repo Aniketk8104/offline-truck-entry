@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "Truck Entry",
+    "slug": "groundup",
+    "owner": "auratech18",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "page.aniket.truckentry",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-background-task",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "The camera is used to take the truck photo.",
+          "photosPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "The location is saved with each truck entry."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4775b7f8-6c99-45ad-be74-191b23f69432"
+      }
+    }
+  }
+}

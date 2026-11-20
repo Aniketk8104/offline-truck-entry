@@ -16,6 +16,8 @@ services:
     volumes:
       # Named volume: the data survives `docker compose down` and container re-creation.
       - db-data:/var/lib/postgresql/data
+      # Postgres runs the .sql files here once, when it creates an empty data volume.
+      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       # TCP check (-h localhost): on first start Postgres runs a socket-only setup server,
       # so a socket check could say "ready" before setup has finished.

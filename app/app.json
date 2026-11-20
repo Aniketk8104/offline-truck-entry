@@ -33,6 +33,14 @@
         {
           "locationWhenInUsePermission": "The location is saved with each truck entry."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": false
+          }
+        }
       ]
     ],
     "extra": {

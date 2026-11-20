@@ -5,12 +5,11 @@
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "types": ["node"],
-    "rootDir": "src",
-    "outDir": "dist",
     "strict": true,
     "esModuleInterop": true,
+    "isolatedModules": true,
     "skipLibCheck": true,
-    "sourceMap": true
+    "noEmit": true
   },
-  "include": ["src"]
+  "include": ["src", "tests"]
 }

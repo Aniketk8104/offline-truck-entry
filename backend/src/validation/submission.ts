@@ -17,11 +17,19 @@ function optionalText(maxLength: number) {
   );
 }
 
+// Counted in characters, the way Postgres counts them (in JavaScript an emoji has length 2).
+function characterCount(value: string): number {
+  return Array.from(value).length;
+}
+
 export const submissionSchema = z
   .object({
     id: z.uuid(),
     plantCode: z.string().trim().min(1).max(50),
-    personName: z.string().trim().min(2, 'Name must be 2-100 characters').max(100, 'Name must be 2-100 characters'),
+    personName: z
+      .string()
+      .trim()
+      .refine((value) => characterCount(value) >= 2 && characterCount(value) <= 100, 'Name must be 2-100 characters'),
     // "mh 09 ab-1234" becomes "MH09AB1234". Loose on purpose: a truck with an unusual plate
     // must not be stuck at the gate, and the photo shows the real plate.
     truckNumber: z

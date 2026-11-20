@@ -129,6 +129,7 @@ describe('POST /api/submissions', () => {
   it.each([
     ['a 5-digit OTP', { otp: '12345' }, 'otp'],
     ['a one-letter name', { personName: ' A ' }, 'personName'],
+    ['a one-emoji name (2 units in JavaScript, 1 character in Postgres)', { personName: '👍' }, 'personName'],
     ['a truck number with symbols', { truckNumber: 'MH09#1234' }, 'truckNumber'],
     ['latitude 91', { latitude: '91' }, 'latitude'],
     ['a latitude that is not a number', { latitude: 'abc' }, 'latitude'],
@@ -139,6 +140,17 @@ describe('POST /api/submissions', () => {
     const res = await post(validFields(randomUUID(), overrides));
     expect(res.status).toBe(400);
     expect(res.body.error.fields).toHaveProperty(field);
+  });
+
+  it('answers 400, not 500, when the database itself refuses a value', async () => {
+    // Postgres text can't hold a NUL character, and the API's own checks don't look for one.
+    const id = randomUUID();
+    const res = await post(validFields(id, { personName: 'Ravi\u0000Patil' }));
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('invalid_data');
+    expect(await rowCount(id)).toBe(0);
+    expect(existsSync(path.join(TEST_UPLOAD_DIR, `${id}.jpg`))).toBe(false);
   });
 
   it('refuses an unknown plant (400) and saves nothing', async () => {

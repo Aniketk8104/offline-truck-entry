@@ -1,0 +1,8 @@
+# The Dockerfile copies only the package files, tsconfig and src. This keeps the rest
+# (installed packages, build output, tests, env files) out of the build context.
+node_modules
+dist
+coverage
+tests
+*.log
+.env*

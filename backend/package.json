@@ -1,0 +1,29 @@
+{
+  "name": "offline-truck-entry-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Stores truck-entry submissions from the offline Android app in PostgreSQL",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch --env-file=../.env src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.19.2",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3"
+  }
+}

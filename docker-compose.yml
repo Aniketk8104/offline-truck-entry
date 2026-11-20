@@ -1,0 +1,28 @@
+# Local stack. Copy .env.example to .env first; Compose reads .env automatically.
+# Fixed project name, so container, network and volume names don't depend on the folder name.
+name: offline-truck-entry
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      # ":?" makes Compose stop with this message instead of starting without a value.
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    ports:
+      # 127.0.0.1 only: the backend and tests on this machine can connect, other devices can't.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Named volume: the data survives `docker compose down` and container re-creation.
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      # TCP check (-h localhost): on first start Postgres runs a socket-only setup server,
+      # so a socket check could say "ready" before setup has finished.
+      test: ["CMD", "pg_isready", "-h", "localhost", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  db-data:

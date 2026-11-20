@@ -86,16 +86,16 @@ export default function App() {
   );
 }
 
-// Every moment an entry gets sent (F6): the app opens, the app comes back to the front, the
-// network comes back, every 30 s while the app is open (for retries that are due), and the
-// background task while the app is closed.
+// Every moment an entry gets sent (F6). When the user looks at the app (it opens or comes back to
+// the front) or the network comes back, every waiting entry is tried now. Every 30 s while the app
+// is open, and from the background task while it is closed, only entries whose retry time has come.
 function useSyncTriggers() {
   useEffect(() => {
     registerBackgroundSync().catch((err) => console.warn('background sync not available', err));
-    syncNow();
+    syncAllNow();
 
     const appState = AppState.addEventListener('change', (state) => {
-      if (state === 'active') syncNow();
+      if (state === 'active') syncAllNow();
     });
 
     let wasOnline: boolean | null = null;

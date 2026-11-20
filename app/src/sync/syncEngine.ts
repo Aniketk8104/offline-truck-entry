@@ -1,7 +1,7 @@
 import NetInfo from '@react-native-community/netinfo';
 import { API_URL } from '../config';
 import { replacePlants } from '../db/plants';
-import { getDeviceId, listDueSubmissions, makePendingDueNow, markFailed, markSynced, scheduleRetry } from '../db/submissions';
+import { getDeviceId, makePendingDueNow, markFailed, markSynced, nextDueSubmission, scheduleRetry } from '../db/submissions';
 import { deletePhoto } from '../services/photo';
 import { fetchPlants, uploadSubmission } from './api';
 
@@ -13,7 +13,7 @@ let running: Promise<void> | null = null;
 let plantsRefreshedAt = 0;
 const listeners = new Set<() => void>();
 
-// Screens subscribe to redraw when an entry or the plant list changes.
+// Screens subscribe to redraw when entries, their status or the plant list may have changed.
 export function onSyncChange(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
@@ -25,18 +25,21 @@ function notify(): void {
   listeners.forEach((listener) => listener());
 }
 
-// Sends every entry that is due. One run at a time: a call during a run gets that run.
-// Even if two runs overlapped, nothing is stored twice: the server answers 200 for an id it has.
+// Sends every entry that is due. One run at a time: a call during a run gets that run, and the run
+// also picks up entries saved while it is going. Even if two runs overlapped, nothing would be
+// stored twice: the server answers 200 for an id it already has.
 export function syncNow(): Promise<void> {
   running ??= runSync()
     .catch((err) => console.warn('sync failed', err))
     .finally(() => {
       running = null;
+      notify(); // also after an offline check, so a new entry's "waiting" count shows at once
     });
   return running;
 }
 
-// The network came back, or the user tapped "Send now": nothing should keep waiting.
+// The user is looking at the app (opened, back in front, "Send now") or the network came back:
+// entries still waiting for their next retry are sent now too.
 export async function syncAllNow(): Promise<void> {
   await makePendingDueNow();
   await syncNow();
@@ -57,7 +60,12 @@ async function runSync(): Promise<void> {
   }
 
   const deviceId = await getDeviceId();
-  for (const entry of await listDueSubmissions(Date.now())) {
+  // One entry at a time, oldest first. SQLite is asked again for each one, so an entry saved
+  // during this run is sent in this run too.
+  for (;;) {
+    const entry = await nextDueSubmission(Date.now());
+    if (!entry) return;
+
     const outcome = await uploadSubmission(entry, deviceId);
     if (outcome.kind === 'saved') {
       await markSynced(entry.id);
@@ -66,10 +74,9 @@ async function runSync(): Promise<void> {
       await markFailed(entry.id, outcome.message);
     } else {
       // Wait 5 s, 10 s, 20 s ... up to 10 min before trying this entry again, so a struggling
-      // server isn't flooded. The other entries wait for the next run.
+      // server isn't flooded. The server can't be reached now, so the rest waits for the next run.
       const wait = Math.min(FIRST_RETRY_MS * 2 ** entry.attempts, MAX_RETRY_MS);
       await scheduleRetry(entry.id, entry.attempts + 1, Date.now() + wait, outcome.message);
-      notify();
       return;
     }
     notify();

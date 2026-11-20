@@ -103,14 +103,15 @@ export async function getSubmission(id: string): Promise<Submission | null> {
   return row ? fromRow(row) : null;
 }
 
-// Oldest first, so entries reach the server in the order they were made.
-export async function listDueSubmissions(now: number): Promise<Submission[]> {
+// The oldest waiting entry whose retry time has come, so entries reach the server in the order
+// they were made.
+export async function nextDueSubmission(now: number): Promise<Submission | null> {
   const db = await getDb();
-  const rows = await db.getAllAsync<Row>(
-    "SELECT * FROM submissions WHERE status = 'pending' AND next_attempt_at <= ? ORDER BY captured_at",
+  const row = await db.getFirstAsync<Row>(
+    "SELECT * FROM submissions WHERE status = 'pending' AND next_attempt_at <= ? ORDER BY captured_at LIMIT 1",
     now,
   );
-  return rows.map(fromRow);
+  return row ? fromRow(row) : null;
 }
 
 export async function countPending(): Promise<number> {

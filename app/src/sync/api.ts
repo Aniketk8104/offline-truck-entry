@@ -3,7 +3,8 @@ import { API_KEY, API_URL, APP_VERSION } from '../config';
 import type { Plant } from '../db/plants';
 import type { Submission } from '../db/submissions';
 
-const UPLOAD_TIMEOUT_MS = 30_000;
+// A photo is about 100-170 KB: 60 s is enough even at 2G speed (~25 kbit/s).
+const UPLOAD_TIMEOUT_MS = 60_000;
 const PLANTS_TIMEOUT_MS = 15_000;
 
 export type UploadOutcome =

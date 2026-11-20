@@ -10,6 +10,7 @@ export type LocationReading = {
   longitude: number | null;
   accuracy: number | null; // metres
   mocked: boolean; // Android reports positions from fake-GPS apps
+  servicesOff: boolean; // no position because location is switched off on the phone
 };
 
 const FIX_TIMEOUT_MS = 15_000;
@@ -28,7 +29,15 @@ export async function readLocation(): Promise<LocationReading> {
     // GPS switched off or no fix possible: try the last known position below.
   }
   const last = await Location.getLastKnownPositionAsync({ maxAge: LAST_KNOWN_MAX_AGE_MS }).catch(() => null);
-  return last ? fromFix('last_known', last) : noPosition('unavailable');
+  if (last) return fromFix('last_known', last);
+  // Tells "location is switched off" apart from "no signal", so the screen can offer to turn it on.
+  const servicesOn = await Location.hasServicesEnabledAsync().catch(() => true);
+  return { ...noPosition('unavailable'), servicesOff: !servicesOn };
+}
+
+// Shows Android's "Turn on location" dialog. Rejects if the user says no.
+export function turnOnLocation(): Promise<void> {
+  return Location.enableNetworkProviderAsync();
 }
 
 function fromFix(status: 'ok' | 'last_known', fix: Location.LocationObject): LocationReading {
@@ -40,11 +49,12 @@ function fromFix(status: 'ok' | 'last_known', fix: Location.LocationObject): Loc
     longitude: Number(longitude.toFixed(6)),
     accuracy: accuracy === null ? null : Math.round(accuracy * 10) / 10,
     mocked: fix.mocked === true,
+    servicesOff: false,
   };
 }
 
 function noPosition(status: 'unavailable' | 'denied'): LocationReading {
-  return { status, latitude: null, longitude: null, accuracy: null, mocked: false };
+  return { status, latitude: null, longitude: null, accuracy: null, mocked: false, servicesOff: false };
 }
 
 // Resolves to null if the promise takes longer than ms.

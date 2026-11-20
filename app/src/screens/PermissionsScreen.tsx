@@ -1,8 +1,8 @@
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useState } from 'react';
-import { AppState, Linking, StyleSheet, Text, View } from 'react-native';
-import { Button, colors, text } from '../ui';
+import { ActivityIndicator, AppState, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Button, Card, Pill, colors, text } from '../ui';
 
 type Permission = { granted: boolean; canAskAgain: boolean };
 type Props = { onReady: () => void };
@@ -48,47 +48,65 @@ export function PermissionsScreen({ onReady }: Props) {
     }
   }
 
-  if (!camera || !location) return <Text style={text.body}>Checking permissions…</Text>;
+  if (!camera || !location) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color={colors.primary} />
+        <Text style={text.hint}>Checking permissions…</Text>
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.list}>
-      <Text style={text.title}>Permissions</Text>
-
-      <Row name="Camera" granted={camera.granted} why="Needed for the truck photo. The form can't open without it." />
-      {!camera.granted && (
-        <Button title={camera.canAskAgain ? 'Allow camera' : 'Open settings to allow camera'} onPress={() => allow('camera')} />
-      )}
-
-      <Row
-        name="Location"
-        granted={location.granted}
-        why="Saved with each entry. Without it, entries are saved without a location."
+    <ScrollView contentContainerStyle={styles.list}>
+      <View>
+        <Text style={text.title}>Permissions</Text>
+        <Text style={text.subtitle}>The camera takes the truck photo. The location is saved with each entry.</Text>
+      </View>
+      <PermissionCard
+        name="Camera"
+        required
+        permission={camera}
+        why="Required: the form can't open without it, because the photo is mandatory."
+        onAllow={() => allow('camera')}
       />
-      {!location.granted && (
-        <Button
-          secondary
-          title={location.canAskAgain ? 'Allow location' : 'Open settings to allow location'}
-          onPress={() => allow('location')}
-        />
-      )}
-
+      <PermissionCard
+        name="Location"
+        required={false}
+        permission={location}
+        why="Optional: without it, entries are saved without a location."
+        onAllow={() => allow('location')}
+      />
       {camera.granted && !location.granted && <Button title="Continue without location" onPress={onReady} />}
-    </View>
+    </ScrollView>
   );
 }
 
-function Row({ name, granted, why }: { name: string; granted: boolean; why: string }) {
+type PermissionCardProps = { name: string; required: boolean; permission: Permission; why: string; onAllow: () => void };
+
+function PermissionCard({ name, required, permission, why, onAllow }: PermissionCardProps) {
   return (
-    <View style={styles.row}>
-      <Text style={[text.label, { color: granted ? colors.ok : colors.danger }]}>
-        {name}: {granted ? 'allowed' : 'not allowed'}
-      </Text>
-      {!granted && <Text style={text.hint}>{why}</Text>}
-    </View>
+    <Card>
+      <View style={styles.row}>
+        <Text style={text.section}>{name}</Text>
+        <Pill label={permission.granted ? 'Allowed' : 'Not allowed'} tone={permission.granted ? 'ok' : 'danger'} />
+      </View>
+      {!permission.granted && (
+        <>
+          <Text style={text.hint}>{why}</Text>
+          <Button
+            secondary={!required}
+            title={permission.canAskAgain ? `Allow ${name.toLowerCase()}` : `Open settings to allow ${name.toLowerCase()}`}
+            onPress={onAllow}
+          />
+        </>
+      )}
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  list: { gap: 14 },
-  row: { gap: 4 },
+  list: { gap: 14, paddingBottom: 24 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
 });

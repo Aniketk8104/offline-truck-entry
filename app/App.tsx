@@ -9,9 +9,10 @@ import { HistoryScreen } from './src/screens/HistoryScreen';
 import { OtpScreen } from './src/screens/OtpScreen';
 import { PermissionsScreen } from './src/screens/PermissionsScreen';
 import { PlantPinScreen } from './src/screens/PlantPinScreen';
+import { countByStatus } from './src/db/submissions';
 import { registerBackgroundSync } from './src/sync/backgroundTask';
-import { syncAllNow, syncNow } from './src/sync/syncEngine';
-import { Screen } from './src/ui';
+import { onSyncChange, syncAllNow, syncNow } from './src/sync/syncEngine';
+import { Screen, type Tone } from './src/ui';
 
 // The app is one short, fixed flow, so the current screen is plain state instead of a router.
 type Route =
@@ -25,20 +26,27 @@ export default function App() {
   const [route, setRoute] = useState<Route>({ name: 'permissions' });
   const net = useNetInfo();
   const offline = net.isConnected === false || net.isInternetReachable === false;
+  const pending = usePendingCount();
 
   useSyncTriggers();
 
-  // Android back button: from the form, OTP or History go back to the plant screen.
+  // Android back button: from the OTP screen or History go back to the plant screen. The form
+  // handles back itself (it asks before discarding a filled-in entry).
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (route.name === 'form' || route.name === 'otp' || route.name === 'history') {
+      if (route.name === 'otp' || route.name === 'history') {
         setRoute({ name: 'plant' });
         return true;
       }
-      return false; // on the first screens, back closes the app as usual
+      return false; // the form's own handler, or on the first screens Android closes the app
     });
     return () => sub.remove();
   }, [route.name]);
+
+  // Always visible in the header: is the phone online, and is anything still waiting to be sent?
+  const parts = [offline ? 'Offline' : null, pending > 0 ? `${pending} waiting` : null].filter(Boolean);
+  const status: { label: string; tone: Tone } =
+    parts.length > 0 ? { label: parts.join(' · '), tone: 'warn' } : { label: 'All sent', tone: 'ok' };
 
   const goToPlant = useCallback(() => setRoute({ name: 'plant' }), []);
 
@@ -78,8 +86,8 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" />
-      <Screen banner={offline ? 'Offline: entries are saved on this phone and sent when the network is back' : null}>
+      <StatusBar style="light" />
+      <Screen status={status} banner={offline ? 'Offline: entries are saved on this phone and sent when the network is back' : null}>
         {screen}
       </Screen>
     </SafeAreaProvider>
@@ -112,4 +120,17 @@ function useSyncTriggers() {
       clearInterval(timer);
     };
   }, []);
+}
+
+// How many entries wait to be sent, refreshed after every sync attempt (a new entry starts one).
+function usePendingCount(): number {
+  const [pending, setPending] = useState(0);
+  useEffect(() => {
+    const load = () => {
+      countByStatus().then((counts) => setPending(counts.pending));
+    };
+    load();
+    return onSyncChange(load);
+  }, []);
+  return pending;
 }

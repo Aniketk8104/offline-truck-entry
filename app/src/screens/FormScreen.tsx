@@ -1,14 +1,14 @@
 import * as Crypto from 'expo-crypto';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Linking, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState, type ComponentRef } from 'react';
+import { ActivityIndicator, Alert, BackHandler, Image, Linking, ScrollView, StyleSheet, Text, type TextInput, View } from 'react-native';
 import type { Plant } from '../db/plants';
 import { insertSubmission } from '../db/submissions';
-import { readLocation, type LocationReading } from '../services/location';
+import { readLocation, turnOnLocation, type LocationReading } from '../services/location';
 import { generateOtp } from '../services/otp';
 import { keepPhoto, takePhoto } from '../services/photo';
 import { cleanTruckNumber, nameProblem, truckProblem } from '../services/validation';
 import { syncNow } from '../sync/syncEngine';
-import { Button, colors, text } from '../ui';
+import { Button, Card, Field, Input, Notice, Pill, colors, text } from '../ui';
 
 type Props = { plant: Plant; onSaved: (submissionId: string, otp: string) => void; onCancel: () => void };
 
@@ -20,6 +20,8 @@ export function FormScreen({ plant, onSaved, onCancel }: Props) {
   const [location, setLocation] = useState<LocationReading | null>(null); // null = still looking
   const [showProblems, setShowProblems] = useState(false);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false); // a double tap must save one entry, not two
+  const truckInput = useRef<ComponentRef<typeof TextInput>>(null);
 
   // The location search starts as soon as the form opens, while the user types (E3).
   async function locate() {
@@ -29,6 +31,27 @@ export function FormScreen({ plant, onSaved, onCancel }: Props) {
   useEffect(() => {
     locate();
   }, []);
+
+  // Back or Cancel with something filled in asks first, so a slip of the thumb doesn't lose the photo.
+  const dirty = name.trim() !== '' || truck.trim() !== '' || photoUri !== null;
+  function leave() {
+    if (savingRef.current) return;
+    if (!dirty) {
+      onCancel();
+      return;
+    }
+    Alert.alert('Discard this entry?', 'The name, truck number and photo will be lost.', [
+      { text: 'Keep editing', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: onCancel },
+    ]);
+  }
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      leave();
+      return true;
+    });
+    return () => sub.remove();
+  }, [dirty]);
 
   async function onTakePhoto() {
     try {
@@ -48,12 +71,15 @@ export function FormScreen({ plant, onSaved, onCancel }: Props) {
     photo: photoUri ? null : 'Take a photo of the truck',
   };
   const complete = !problems.name && !problems.truck && !problems.photo;
+  const cleanedTruck = cleanTruckNumber(truck);
+  const truckHint = truck && cleanedTruck !== truck ? `Saved as ${cleanedTruck}` : null;
 
   // F5 and F6: saved on the phone first, online or not. The OTP is shown right away.
   async function submit() {
     setShowProblems(true);
-    if (!complete || !photoUri || !location || saving) return;
-    setSaving(true); // also stops a double tap from saving two entries
+    if (!complete || !photoUri || !location || savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
     try {
       // Made once, here. Every retry sends this same id, so the server saves the entry only once (E6).
       const id = Crypto.randomUUID();
@@ -63,7 +89,7 @@ export function FormScreen({ plant, onSaved, onCancel }: Props) {
         id,
         plantCode: plant.code,
         personName: name.trim(),
-        truckNumber: cleanTruckNumber(truck),
+        truckNumber: cleanedTruck,
         photoUri: savedPhotoUri,
         latitude: location.latitude,
         longitude: location.longitude,
@@ -76,6 +102,7 @@ export function FormScreen({ plant, onSaved, onCancel }: Props) {
       syncNow(); // sends it now if online; otherwise it waits safely in SQLite
       onSaved(id, otp);
     } catch {
+      savingRef.current = false;
       setSaving(false);
       Alert.alert('Not saved', 'The entry could not be saved on this phone. Please try again.');
     }
@@ -83,34 +110,57 @@ export function FormScreen({ plant, onSaved, onCancel }: Props) {
 
   return (
     <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
-      <Text style={text.title}>{plant.name}</Text>
+      <View style={styles.titleRow}>
+        <Text style={text.title}>New entry</Text>
+        <Pill label={plant.name} tone="info" />
+      </View>
 
-      <Text style={text.label}>Name</Text>
-      <TextInput style={text.input} value={name} onChangeText={setName} placeholder="Driver or person name" maxLength={100} />
-      {showProblems && problems.name && <Text style={text.error}>{problems.name}</Text>}
+      <Card>
+        <Field label="Name" error={showProblems ? problems.name : null}>
+          <Input
+            value={name}
+            onChangeText={setName}
+            placeholder="Driver or person name"
+            maxLength={100}
+            autoCapitalize="words"
+            returnKeyType="next"
+            submitBehavior="submit"
+            onSubmitEditing={() => truckInput.current?.focus()}
+          />
+        </Field>
+        <Field label="Truck number" error={showProblems ? problems.truck : null} hint={truckHint}>
+          <Input
+            ref={truckInput}
+            value={truck}
+            onChangeText={setTruck}
+            placeholder="e.g. MH09AB1234"
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={20}
+          />
+        </Field>
+      </Card>
 
-      <Text style={text.label}>Truck number</Text>
-      <TextInput
-        style={text.input}
-        value={truck}
-        onChangeText={setTruck}
-        placeholder="e.g. MH09AB1234"
-        autoCapitalize="characters"
-        autoCorrect={false}
-        maxLength={20}
-      />
-      {showProblems && problems.truck && <Text style={text.error}>{problems.truck}</Text>}
+      <Card>
+        <Field label="Photo" error={showProblems ? problems.photo : null}>
+          {photoUri ? (
+            <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />
+          ) : (
+            <View style={[styles.photo, styles.noPhoto]}>
+              <Text style={text.hint}>No photo yet</Text>
+            </View>
+          )}
+        </Field>
+        <Button secondary={!!photoUri} title={photoUri ? 'Retake photo' : 'Take photo'} onPress={onTakePhoto} />
+      </Card>
 
-      <Text style={text.label}>Photo</Text>
-      {photoUri && <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />}
-      <Button secondary title={photoUri ? 'Retake photo' : 'Take photo'} onPress={onTakePhoto} />
-      {showProblems && problems.photo && <Text style={text.error}>{problems.photo}</Text>}
-
-      <Text style={text.label}>Location</Text>
-      <LocationInfo location={location} onRetry={locate} />
+      <Card>
+        <Text style={text.label}>Location</Text>
+        <LocationInfo location={location} onRetry={locate} />
+      </Card>
 
       <Button title={location ? 'Submit' : 'Waiting for location…'} onPress={submit} disabled={!location} busy={saving} />
-      <Button secondary title="Cancel" onPress={onCancel} disabled={saving} />
+      <Button secondary title="Cancel" onPress={leave} disabled={saving} />
     </ScrollView>
   );
 }
@@ -129,19 +179,29 @@ function LocationInfo({ location, onRetry }: { location: LocationReading | null;
       ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}` +
         (location.accuracy !== null ? ` (±${Math.round(location.accuracy)} m)` : '')
       : '';
+
   return (
     <View style={styles.locationBox}>
-      {location.status === 'ok' && <Text style={text.body}>{where}</Text>}
+      {location.status === 'ok' && <Notice tone="ok">{where}</Notice>}
       {location.status === 'last_known' && (
-        <Text style={text.warn}>No fresh GPS fix. Using the last known position from the past 5 minutes: {where}</Text>
+        <Notice tone="warn">{`No fresh GPS fix. Using the last known position from the past 5 minutes: ${where}`}</Notice>
       )}
       {location.status === 'unavailable' && (
-        <Text style={text.warn}>Location not available (GPS off, indoors or slow). The entry can be saved without it.</Text>
+        <Notice tone="warn">
+          {location.servicesOff
+            ? 'Location is turned off on this phone. Turn it on and try again, or submit without a location.'
+            : 'No location yet (indoors or weak GPS). Try again, or submit without a location.'}
+        </Notice>
       )}
       {location.status === 'denied' && (
-        <Text style={text.warn}>Location permission is off. The entry will be saved without a location.</Text>
+        <Notice tone="warn">Location permission is off, so the entry is saved without a location.</Notice>
       )}
-      {location.mocked && <Text style={text.error}>This position comes from a mock-location app.</Text>}
+      {location.mocked && <Notice tone="danger">This position comes from a mock-location app. It is saved and flagged.</Notice>}
+
+      {location.status === 'unavailable' && location.servicesOff && (
+        // Android's own "Turn on location" dialog; if the user says no, nothing changes.
+        <Button title="Turn on location" onPress={() => turnOnLocation().then(onRetry, () => undefined)} />
+      )}
       {(location.status === 'last_known' || location.status === 'unavailable') && (
         <Button secondary title="Try again" onPress={onRetry} />
       )}
@@ -151,8 +211,10 @@ function LocationInfo({ location, onRetry }: { location: LocationReading | null;
 }
 
 const styles = StyleSheet.create({
-  list: { gap: 10, paddingBottom: 24 },
+  list: { gap: 14, paddingBottom: 24 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  photo: { width: '100%', height: 200, borderRadius: 8, backgroundColor: colors.border },
-  locationBox: { gap: 8 },
+  photo: { width: '100%', height: 200, borderRadius: 8, backgroundColor: colors.divider },
+  noPhoto: { alignItems: 'center', justifyContent: 'center' },
+  locationBox: { gap: 10 },
 });

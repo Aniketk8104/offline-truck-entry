@@ -7,7 +7,7 @@ export function cleanTruckNumber(value: string): string {
 }
 
 export function nameProblem(name: string): string | null {
-  const length = name.trim().length;
+  const length = Array.from(name.trim()).length; // characters, as the server counts (an emoji is 1, not 2)
   return length >= 2 && length <= 100 ? null : 'Enter the name (2-100 characters)';
 }
 

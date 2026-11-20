@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text } from 'react-native';
 import type { Plant } from '../db/plants';
-import { getSubmission, type SubmissionStatus } from '../db/submissions';
+import { getSubmission, type Submission } from '../db/submissions';
 import { onSyncChange } from '../sync/syncEngine';
-import { Button, colors, text } from '../ui';
+import { Button, Card, Notice, colors, text } from '../ui';
 
 type Props = {
   plant: Plant;
@@ -17,38 +17,49 @@ type Props = {
 // F5: the OTP is shown right after Submit, online or offline. It is the entry's receipt code:
 // it is stored with the entry on the phone and in the database.
 export function OtpScreen({ plant, submissionId, otp, onNewEntry, onHistory, onDone }: Props) {
-  const [status, setStatus] = useState<SubmissionStatus>('pending');
+  const [entry, setEntry] = useState<Submission | null>(null);
 
   // Updates live when the sync sends this entry.
   useEffect(() => {
     const load = () => {
-      getSubmission(submissionId).then((s) => s && setStatus(s.status));
+      getSubmission(submissionId).then(setEntry);
     };
     load();
     return onSyncChange(load);
   }, [submissionId]);
 
+  const status = entry?.status ?? 'pending';
+
   return (
-    <View style={styles.list}>
-      <Text style={text.title}>Entry saved</Text>
-      <Text style={text.hint}>OTP for this entry</Text>
-      <Text style={styles.otp} accessibilityLabel={`OTP ${otp.split('').join(' ')}`}>
-        {otp}
-      </Text>
+    <ScrollView contentContainerStyle={styles.list}>
+      <Card>
+        <Text style={[text.section, styles.center, { color: colors.ok }]}>✓ Entry saved</Text>
+        <Text style={[text.hint, styles.center]}>OTP for this entry</Text>
+        <Text style={styles.otp} accessibilityLabel={`OTP ${otp.split('').join(' ')}`}>
+          {otp}
+        </Text>
+        {entry && (
+          <Text style={[text.body, styles.center]}>
+            {entry.truckNumber} · {entry.personName} · {plant.name}
+          </Text>
+        )}
+      </Card>
+
       {status === 'pending' && (
-        <Text style={text.warn}>Saved on this phone. It is sent to the server automatically when the phone is online.</Text>
+        <Notice tone="warn">Saved on this phone. It is sent to the server automatically when the phone is online.</Notice>
       )}
-      {status === 'synced' && <Text style={[text.body, { color: colors.ok }]}>Sent to the server.</Text>}
-      {status === 'failed' && <Text style={text.error}>The server refused this entry. See History for the reason.</Text>}
+      {status === 'synced' && <Notice tone="ok">Sent to the server.</Notice>}
+      {status === 'failed' && <Notice tone="danger">The server refused this entry. History shows the reason.</Notice>}
 
       <Button title={`New entry for ${plant.name}`} onPress={onNewEntry} />
       <Button secondary title="History" onPress={onHistory} />
       <Button secondary title="Change plant" onPress={onDone} />
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  list: { gap: 14 },
-  otp: { fontSize: 52, fontWeight: '700', letterSpacing: 8, color: colors.primary, textAlign: 'center', marginVertical: 8 },
+  list: { gap: 14, paddingBottom: 24 },
+  center: { textAlign: 'center' },
+  otp: { fontSize: 52, fontWeight: '700', letterSpacing: 8, color: colors.primary, textAlign: 'center', marginVertical: 4 },
 });

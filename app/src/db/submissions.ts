@@ -114,10 +114,15 @@ export async function nextDueSubmission(now: number): Promise<Submission | null>
   return row ? fromRow(row) : null;
 }
 
-export async function countPending(): Promise<number> {
+// Counted over every entry on the phone, not just the 200 the History list shows.
+export async function countByStatus(): Promise<Record<SubmissionStatus, number>> {
   const db = await getDb();
-  const row = await db.getFirstAsync<{ n: number }>("SELECT count(*) AS n FROM submissions WHERE status = 'pending'");
-  return row?.n ?? 0;
+  const rows = await db.getAllAsync<{ status: SubmissionStatus; n: number }>(
+    'SELECT status, count(*) AS n FROM submissions GROUP BY status',
+  );
+  const counts = { pending: 0, synced: 0, failed: 0 };
+  for (const row of rows) counts[row.status] = row.n;
+  return counts;
 }
 
 export async function markSynced(id: string): Promise<void> {

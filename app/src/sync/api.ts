@@ -1,3 +1,4 @@
+import { File } from 'expo-file-system';
 import { API_KEY, API_URL, APP_VERSION } from '../config';
 import type { Plant } from '../db/plants';
 import type { Submission } from '../db/submissions';
@@ -11,6 +12,9 @@ export type UploadOutcome =
   | { kind: 'retry'; message: string }; // network or server trouble: send it again later
 
 export async function uploadSubmission(s: Submission, deviceId: string): Promise<UploadOutcome> {
+  const photo = new File(s.photoUri);
+  if (!photo.exists) return { kind: 'rejected', message: 'The photo file is missing on this phone' };
+
   const form = new FormData();
   form.append('id', s.id);
   form.append('plantCode', s.plantCode);
@@ -27,8 +31,9 @@ export async function uploadSubmission(s: Submission, deviceId: string): Promise
   form.append('capturedAt', s.capturedAt);
   form.append('deviceId', deviceId);
   form.append('appVersion', APP_VERSION);
-  // React Native uploads a { uri, name, type } object as a file read from disk.
-  form.append('photo', { uri: s.photoUri, name: `${s.id}.jpg`, type: 'image/jpeg' } as unknown as Blob);
+  // SDK 58's global fetch is Expo's, which reads file parts from an expo-file-system File.
+  // (React Native's old { uri, name, type } object is not supported by it.)
+  form.append('photo', photo);
 
   let response: Response;
   try {
@@ -37,10 +42,12 @@ export async function uploadSubmission(s: Submission, deviceId: string): Promise
       { method: 'POST', headers: { 'x-api-key': API_KEY }, body: form },
       UPLOAD_TIMEOUT_MS,
     );
-  } catch {
+  } catch (err) {
     // No answer at all (offline, dropped connection, timeout). The server may or may not have
     // saved it; resending the same id is safe either way.
-    return { kind: 'retry', message: 'Could not reach the server' };
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn('upload failed', s.id, reason);
+    return { kind: 'retry', message: `Could not reach the server (${reason})` };
   }
   if (response.status === 201 || response.status === 200) return { kind: 'saved' };
   const message = await readError(response);

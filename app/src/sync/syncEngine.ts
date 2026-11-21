@@ -1,9 +1,17 @@
 import NetInfo from '@react-native-community/netinfo';
 import { API_URL } from '../config';
 import { replacePlants } from '../db/plants';
-import { getDeviceId, makePendingDueNow, markFailed, markSynced, nextDueSubmission, scheduleRetry } from '../db/submissions';
+import {
+  getDeviceId,
+  makePendingDueNow,
+  markFailed,
+  markSynced,
+  nextDueSubmission,
+  scheduleRetry,
+  setPlaceName,
+} from '../db/submissions';
 import { deletePhoto } from '../services/photo';
-import { fetchPlants, uploadSubmission } from './api';
+import { fetchPlaceName, fetchPlants, uploadSubmission } from './api';
 
 const FIRST_RETRY_MS = 5_000;
 const MAX_RETRY_MS = 10 * 60_000;
@@ -60,11 +68,24 @@ async function runSync(): Promise<void> {
   }
 
   const deviceId = await getDeviceId();
+  let lookUpPlaces = true;
   // One entry at a time, oldest first. SQLite is asked again for each one, so an entry saved
   // during this run is sent in this run too.
   for (;;) {
-    const entry = await nextDueSubmission(Date.now());
+    let entry = await nextDueSubmission(Date.now());
     if (!entry) return;
+
+    // An entry made offline gets its place name now that the phone is online. Best effort: if the
+    // lookup fails, the entry is sent without one, and the rest of this run skips the lookup.
+    if (lookUpPlaces && entry.placeName === null && entry.latitude !== null && entry.longitude !== null) {
+      const name = await fetchPlaceName(entry.latitude, entry.longitude);
+      if (name) {
+        await setPlaceName(entry.id, name);
+        entry = { ...entry, placeName: name };
+      } else {
+        lookUpPlaces = false;
+      }
+    }
 
     const outcome = await uploadSubmission(entry, deviceId);
     if (outcome.kind === 'saved') {

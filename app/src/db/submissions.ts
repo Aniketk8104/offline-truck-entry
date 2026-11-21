@@ -14,6 +14,7 @@ export type Submission = {
   latitude: number | null;
   longitude: number | null;
   accuracy: number | null;
+  placeName: string | null; // from OpenStreetMap; looked up at Submit when online, else when sent
   locationStatus: LocationStatus;
   locationMocked: boolean;
   otp: string;
@@ -36,6 +37,7 @@ type Row = {
   latitude: number | null;
   longitude: number | null;
   accuracy: number | null;
+  place_name: string | null;
   location_status: LocationStatus;
   location_mocked: number;
   otp: string;
@@ -57,6 +59,7 @@ function fromRow(r: Row): Submission {
     latitude: r.latitude,
     longitude: r.longitude,
     accuracy: r.accuracy,
+    placeName: r.place_name,
     locationStatus: r.location_status,
     locationMocked: r.location_mocked === 1,
     otp: r.otp,
@@ -74,8 +77,8 @@ export async function insertSubmission(s: NewSubmission): Promise<void> {
   const db = await getDb();
   await db.runAsync(
     `INSERT INTO submissions (id, plant_code, person_name, truck_number, photo_uri, latitude, longitude,
-       accuracy, location_status, location_mocked, otp, captured_at, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+       accuracy, place_name, location_status, location_mocked, otp, captured_at, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
     s.id,
     s.plantCode,
     s.personName,
@@ -84,6 +87,7 @@ export async function insertSubmission(s: NewSubmission): Promise<void> {
     s.latitude,
     s.longitude,
     s.accuracy,
+    s.placeName,
     s.locationStatus,
     s.locationMocked ? 1 : 0,
     s.otp,
@@ -132,6 +136,11 @@ export async function markSynced(id: string): Promise<void> {
     new Date().toISOString(),
     id,
   );
+}
+
+export async function setPlaceName(id: string, placeName: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE submissions SET place_name = ? WHERE id = ?', placeName, id);
 }
 
 export async function markFailed(id: string, message: string): Promise<void> {

@@ -60,7 +60,8 @@ async function openAndMigrate(): Promise<SQLite.SQLiteDatabase> {
 
   // user_version records which schema this phone has, so each setup step runs only once.
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
-  if ((row?.user_version ?? 0) < 1) {
+  const version = row?.user_version ?? 0;
+  if (version < 1) {
     await db.withTransactionAsync(async () => {
       await db.execAsync(SCHEMA_V1);
       for (const plant of PLANTS_SEED) {
@@ -75,6 +76,14 @@ async function openAndMigrate(): Promise<SQLite.SQLiteDatabase> {
       // A random id for this install, sent with each entry so the server can tell phones apart.
       await db.runAsync("INSERT INTO settings (key, value) VALUES ('device_id', ?)", Crypto.randomUUID());
       await db.execAsync('PRAGMA user_version = 1');
+    });
+  }
+  // Version 2 adds the place name. A phone that already has version 1 (with its saved entries) runs
+  // only this step.
+  if (version < 2) {
+    await db.withTransactionAsync(async () => {
+      await db.execAsync('ALTER TABLE submissions ADD COLUMN place_name TEXT');
+      await db.execAsync('PRAGMA user_version = 2');
     });
   }
   return db;

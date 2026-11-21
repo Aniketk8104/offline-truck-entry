@@ -7,10 +7,12 @@ import { FIX_TIMEOUT_MS, isLocationOn, readLocation, turnOnLocation, type Locati
 import { generateOtp } from '../services/otp';
 import { keepPhoto, takePhoto } from '../services/photo';
 import { cleanTruckNumber, nameProblem, truckProblem } from '../services/validation';
+import { fetchPlaceName } from '../sync/api';
 import { syncNow } from '../sync/syncEngine';
 import { Button, Card, Field, Input, Notice, Pill, colors, text } from '../ui';
 
 type Props = { plant: Plant; onSaved: (submissionId: string, otp: string) => void; onCancel: () => void };
+type Place = { name: string | null; looking: boolean };
 
 // F4: name, truck number, a photo from the camera, and the location filled in automatically.
 export function FormScreen({ plant, onSaved, onCancel }: Props) {
@@ -54,6 +56,26 @@ export function FormScreen({ plant, onSaved, onCancel }: Props) {
       clearInterval(timer);
     };
   }, [waitingForLocationOn]);
+
+  // The place name for the position, from OpenStreetMap through our API, when the phone is online.
+  // Offline it is looked up later, when the entry is sent.
+  const [place, setPlace] = useState<Place>({ name: null, looking: false });
+  const latitude = location?.latitude ?? null;
+  const longitude = location?.longitude ?? null;
+  useEffect(() => {
+    if (latitude === null || longitude === null) {
+      setPlace({ name: null, looking: false });
+      return;
+    }
+    let current = true;
+    setPlace({ name: null, looking: true });
+    fetchPlaceName(latitude, longitude).then((name) => {
+      if (current) setPlace({ name, looking: false });
+    });
+    return () => {
+      current = false;
+    };
+  }, [latitude, longitude]);
 
   // Back or Cancel with something filled in asks first, so a slip of the thumb doesn't lose the photo.
   const dirty = name.trim() !== '' || truck.trim() !== '' || photoUri !== null;
@@ -119,6 +141,7 @@ export function FormScreen({ plant, onSaved, onCancel }: Props) {
         accuracy: location.accuracy,
         locationStatus: location.status,
         locationMocked: location.mocked,
+        placeName: place.name,
         otp,
         capturedAt: new Date().toISOString(),
       });
@@ -179,7 +202,7 @@ export function FormScreen({ plant, onSaved, onCancel }: Props) {
 
       <Card>
         <Text style={text.label}>Location</Text>
-        <LocationInfo location={location} searchStartedAt={searchStartedAt} onRetry={locate} />
+        <LocationInfo location={location} place={place} searchStartedAt={searchStartedAt} onRetry={locate} />
       </Card>
 
       <Button title={location ? 'Submit' : 'Waiting for location…'} onPress={submit} disabled={!location} busy={saving} />
@@ -188,9 +211,9 @@ export function FormScreen({ plant, onSaved, onCancel }: Props) {
   );
 }
 
-type LocationInfoProps = { location: LocationReading | null; searchStartedAt: number; onRetry: () => void };
+type LocationInfoProps = { location: LocationReading | null; place: Place; searchStartedAt: number; onRetry: () => void };
 
-function LocationInfo({ location, searchStartedAt, onRetry }: LocationInfoProps) {
+function LocationInfo({ location, place, searchStartedAt, onRetry }: LocationInfoProps) {
   if (!location) return <Searching startedAt={searchStartedAt} />;
   const where =
     location.latitude !== null && location.longitude !== null
@@ -204,6 +227,7 @@ function LocationInfo({ location, searchStartedAt, onRetry }: LocationInfoProps)
       {location.status === 'last_known' && (
         <Notice tone="warn">{`No fresh GPS fix. Using the last known position from the past 5 minutes: ${where}`}</Notice>
       )}
+      {where !== '' && <PlaceLine place={place} />}
       {location.status === 'unavailable' && (
         <Notice tone="warn">
           {location.servicesOff
@@ -224,6 +248,18 @@ function LocationInfo({ location, searchStartedAt, onRetry }: LocationInfoProps)
         <Button secondary title="Try again" onPress={onRetry} />
       )}
       {location.status === 'denied' && <Button secondary title="Open settings" onPress={() => Linking.openSettings()} />}
+    </View>
+  );
+}
+
+// Under the coordinates: the place name, or why there is none yet.
+function PlaceLine({ place }: { place: Place }) {
+  if (place.looking) return <Text style={text.hint}>Finding the place name…</Text>;
+  if (!place.name) return <Text style={text.hint}>No place name yet: it is looked up when the entry is sent.</Text>;
+  return (
+    <View style={styles.place}>
+      <Text style={text.label}>{place.name}</Text>
+      <Text style={text.hint}>Place name © OpenStreetMap contributors</Text>
     </View>
   );
 }
@@ -253,4 +289,5 @@ const styles = StyleSheet.create({
   photo: { width: '100%', height: 200, borderRadius: 8, backgroundColor: colors.divider },
   noPhoto: { alignItems: 'center', justifyContent: 'center' },
   locationBox: { gap: 10 },
+  place: { gap: 2 },
 });

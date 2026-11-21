@@ -43,6 +43,7 @@ export function OtpScreen({ plant, submissionId, otp, onNewEntry, onHistory, onD
             {entry.truckNumber} · {entry.personName} · {plant.name}
           </Text>
         )}
+        {entry?.placeName && <Text style={[text.hint, styles.center]}>{entry.placeName}</Text>}
       </Card>
 
       {status === 'pending' && (

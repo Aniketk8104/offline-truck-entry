@@ -62,6 +62,9 @@ export function HistoryScreen({ onBack }: Props) {
         keyExtractor={(e) => e.id}
         renderItem={({ item }) => <EntryRow entry={item} />}
         ListEmptyComponent={<Text style={text.hint}>No entries yet.</Text>}
+        ListFooterComponent={
+          entries.some((e) => e.placeName) ? <Text style={text.hint}>Place names © OpenStreetMap contributors</Text> : undefined
+        }
         contentContainerStyle={styles.items}
       />
       <Button secondary title="Back" onPress={onBack} />
@@ -80,6 +83,7 @@ function EntryRow({ entry }: { entry: Submission }) {
       <Text style={text.body}>
         {entry.personName} · {entry.plantCode}
       </Text>
+      {entry.placeName && <Text style={text.body}>{entry.placeName}</Text>}
       <Text style={text.body}>
         OTP <Text style={styles.otp}>{entry.otp}</Text>
       </Text>

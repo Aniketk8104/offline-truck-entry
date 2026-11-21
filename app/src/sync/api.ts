@@ -1,3 +1,4 @@
+import NetInfo from '@react-native-community/netinfo';
 import { File } from 'expo-file-system';
 import { API_KEY, API_URL, APP_VERSION } from '../config';
 import type { Plant } from '../db/plants';
@@ -6,6 +7,7 @@ import type { Submission } from '../db/submissions';
 // A photo is about 100-170 KB: 60 s is enough even at 2G speed (~25 kbit/s).
 const UPLOAD_TIMEOUT_MS = 60_000;
 const PLANTS_TIMEOUT_MS = 15_000;
+const PLACE_TIMEOUT_MS = 8_000;
 
 export type UploadOutcome =
   | { kind: 'saved' } // 201 saved now, or 200 saved by an earlier try
@@ -26,6 +28,7 @@ export async function uploadSubmission(s: Submission, deviceId: string): Promise
     form.append('longitude', String(s.longitude));
   }
   if (s.accuracy !== null) form.append('accuracy', String(s.accuracy));
+  if (s.placeName) form.append('placeName', s.placeName);
   form.append('locationStatus', s.locationStatus);
   form.append('locationMocked', String(s.locationMocked));
   form.append('otp', s.otp);
@@ -67,6 +70,26 @@ export async function fetchPlants(): Promise<Plant[] | null> {
       (p): p is Plant =>
         typeof p?.code === 'string' && typeof p?.name === 'string' && typeof p?.pinSalt === 'string' && typeof p?.pinHash === 'string',
     );
+  } catch {
+    return null;
+  }
+}
+
+// The place name for a position, from our API (which asks OpenStreetMap). null when offline or when no
+// name can be found right now; never throws.
+export async function fetchPlaceName(latitude: number, longitude: number): Promise<string | null> {
+  if (!API_URL) return null;
+  try {
+    const net = await NetInfo.fetch();
+    if (net.isConnected === false || net.isInternetReachable === false) return null;
+    const response = await fetchWithTimeout(
+      `${API_URL}/api/place-name?lat=${latitude}&lon=${longitude}`,
+      { headers: { 'x-api-key': API_KEY } },
+      PLACE_TIMEOUT_MS,
+    );
+    if (!response.ok) return null;
+    const body = (await response.json()) as { name?: unknown };
+    return typeof body.name === 'string' && body.name.trim() !== '' ? body.name.slice(0, 300) : null;
   } catch {
     return null;
   }

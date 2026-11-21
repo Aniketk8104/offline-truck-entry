@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { ActivityIndicator, Alert, BackHandler, Image, Linking, ScrollView, StyleSheet, Text, type TextInput, View } from 'react-native';
 import type { Plant } from '../db/plants';
 import { insertSubmission } from '../db/submissions';
-import { readLocation, turnOnLocation, type LocationReading } from '../services/location';
+import { FIX_TIMEOUT_MS, isLocationOn, readLocation, turnOnLocation, type LocationReading } from '../services/location';
 import { generateOtp } from '../services/otp';
 import { keepPhoto, takePhoto } from '../services/photo';
 import { cleanTruckNumber, nameProblem, truckProblem } from '../services/validation';
@@ -23,14 +23,37 @@ export function FormScreen({ plant, onSaved, onCancel }: Props) {
   const savingRef = useRef(false); // a double tap must save one entry, not two
   const truckInput = useRef<ComponentRef<typeof TextInput>>(null);
 
-  // The location search starts as soon as the form opens, while the user types (E3).
+  // The location search starts as soon as the form opens, while the user types (E3). Each search gets
+  // a number, so an older, slower search can never overwrite the result of a newer one.
+  const search = useRef(0);
+  const [searchStartedAt, setSearchStartedAt] = useState(Date.now());
   async function locate() {
+    const id = ++search.current;
     setLocation(null);
-    setLocation(await readLocation());
+    setSearchStartedAt(Date.now());
+    const reading = await readLocation();
+    if (id === search.current) setLocation(reading);
   }
   useEffect(() => {
     locate();
   }, []);
+
+  // While location is switched off, check every 2 s: once it is on (from the button's dialog or the
+  // quick settings), the search starts again by itself.
+  const waitingForLocationOn = location?.status === 'unavailable' && location.servicesOff;
+  useEffect(() => {
+    if (!waitingForLocationOn) return;
+    let active = true;
+    const timer = setInterval(() => {
+      isLocationOn().then((on) => {
+        if (on && active) locate();
+      });
+    }, 2_000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [waitingForLocationOn]);
 
   // Back or Cancel with something filled in asks first, so a slip of the thumb doesn't lose the photo.
   const dirty = name.trim() !== '' || truck.trim() !== '' || photoUri !== null;
@@ -156,7 +179,7 @@ export function FormScreen({ plant, onSaved, onCancel }: Props) {
 
       <Card>
         <Text style={text.label}>Location</Text>
-        <LocationInfo location={location} onRetry={locate} />
+        <LocationInfo location={location} searchStartedAt={searchStartedAt} onRetry={locate} />
       </Card>
 
       <Button title={location ? 'Submit' : 'Waiting for location…'} onPress={submit} disabled={!location} busy={saving} />
@@ -165,15 +188,10 @@ export function FormScreen({ plant, onSaved, onCancel }: Props) {
   );
 }
 
-function LocationInfo({ location, onRetry }: { location: LocationReading | null; onRetry: () => void }) {
-  if (!location) {
-    return (
-      <View style={styles.row}>
-        <ActivityIndicator color={colors.primary} />
-        <Text style={text.body}>Getting location… (up to 15 s)</Text>
-      </View>
-    );
-  }
+type LocationInfoProps = { location: LocationReading | null; searchStartedAt: number; onRetry: () => void };
+
+function LocationInfo({ location, searchStartedAt, onRetry }: LocationInfoProps) {
+  if (!location) return <Searching startedAt={searchStartedAt} />;
   const where =
     location.latitude !== null && location.longitude !== null
       ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}` +
@@ -189,8 +207,8 @@ function LocationInfo({ location, onRetry }: { location: LocationReading | null;
       {location.status === 'unavailable' && (
         <Notice tone="warn">
           {location.servicesOff
-            ? 'Location is turned off on this phone. Turn it on and try again, or submit without a location.'
-            : 'No location yet (indoors or weak GPS). Try again, or submit without a location.'}
+            ? 'Location is turned off on this phone. Once it is on, the position is found by itself. You can also submit without a location.'
+            : 'No location found in 15 s (indoors or weak GPS). Try again, or submit without a location.'}
         </Notice>
       )}
       {location.status === 'denied' && (
@@ -202,10 +220,28 @@ function LocationInfo({ location, onRetry }: { location: LocationReading | null;
         // Android's own "Turn on location" dialog; if the user says no, nothing changes.
         <Button title="Turn on location" onPress={() => turnOnLocation().then(onRetry, () => undefined)} />
       )}
-      {(location.status === 'last_known' || location.status === 'unavailable') && (
+      {(location.status === 'last_known' || (location.status === 'unavailable' && !location.servicesOff)) && (
         <Button secondary title="Try again" onPress={onRetry} />
       )}
       {location.status === 'denied' && <Button secondary title="Open settings" onPress={() => Linking.openSettings()} />}
+    </View>
+  );
+}
+
+// A seconds counter, so a slow first GPS fix doesn't look like a frozen screen.
+function Searching({ startedAt }: { startedAt: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.floor((now - startedAt) / 1000));
+  return (
+    <View style={styles.row}>
+      <ActivityIndicator color={colors.primary} />
+      <Text style={text.body}>
+        Getting location… {seconds} s (up to {FIX_TIMEOUT_MS / 1000} s)
+      </Text>
     </View>
   );
 }

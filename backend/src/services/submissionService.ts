@@ -17,6 +17,7 @@ export type SubmissionRow = {
   latitude: string | null; // pg returns NUMERIC as text, so no precision is lost
   longitude: string | null;
   location_accuracy_m: number | null;
+  place_name: string | null;
   location_status: string;
   location_mocked: boolean;
   otp: string;
@@ -48,8 +49,8 @@ export async function saveSubmission(
     const inserted = await client.query<SubmissionRow>(
       `INSERT INTO submissions (id, plant_code, person_name, truck_number, photo_path, photo_mime, photo_bytes,
          latitude, longitude, location_accuracy_m, location_status, location_mocked, otp, captured_at,
-         device_id, app_version)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+         device_id, app_version, place_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        ON CONFLICT (id) DO NOTHING
        RETURNING *`,
       [
@@ -69,6 +70,7 @@ export async function saveSubmission(
         input.capturedAt,
         input.deviceId ?? null,
         input.appVersion ?? null,
+        input.placeName ?? null,
       ],
     );
 

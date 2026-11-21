@@ -39,6 +39,7 @@ export const submissionSchema = z
     latitude: optionalNumber(-90, 90),
     longitude: optionalNumber(-180, 180),
     accuracy: optionalNumber(0, 100_000),
+    placeName: optionalText(300),
     locationStatus: z.enum(['ok', 'last_known', 'unavailable', 'denied']),
     locationMocked: z
       .enum(['true', 'false'])

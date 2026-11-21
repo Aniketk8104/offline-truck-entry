@@ -60,6 +60,7 @@ function toApi(row: SubmissionRow) {
     latitude: row.latitude === null ? null : Number(row.latitude),
     longitude: row.longitude === null ? null : Number(row.longitude),
     accuracy: row.location_accuracy_m,
+    placeName: row.place_name,
     locationStatus: row.location_status,
     locationMocked: row.location_mocked,
     otp: row.otp,

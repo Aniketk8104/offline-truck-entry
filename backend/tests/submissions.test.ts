@@ -57,11 +57,12 @@ afterAll(async () => {
 describe('POST /api/submissions', () => {
   it('saves a new submission and its photo (201)', async () => {
     const id = randomUUID();
-    const res = await post(validFields(id));
+    const res = await post(validFields(id, { placeName: 'Rajarampuri, Kolhapur, Maharashtra' }));
 
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({
       id,
+      placeName: 'Rajarampuri, Kolhapur, Maharashtra',
       plantCode: 'KOLHAPUR',
       personName: 'Ravi Patil',
       truckNumber: 'MH09AB1234',
@@ -134,6 +135,7 @@ describe('POST /api/submissions', () => {
     ['latitude 91', { latitude: '91' }, 'latitude'],
     ['a latitude that is not a number', { latitude: 'abc' }, 'latitude'],
     ['an id that is not a UUID', { id: 'not-a-uuid' }, 'id'],
+    ['a place name over 300 characters', { placeName: 'x'.repeat(301) }, 'placeName'],
     ['status ok without a position', { latitude: undefined, longitude: undefined }, 'locationStatus'],
     ['status denied with a position', { locationStatus: 'denied' }, 'locationStatus'],
   ])('refuses %s (400)', async (_label, overrides, field) => {

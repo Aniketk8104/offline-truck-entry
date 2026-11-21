@@ -3,6 +3,7 @@ import { pool } from './db';
 import { requireApiKey } from './middleware/apiKey';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
+import { placeNameRouter } from './routes/placeName';
 import { plantsRouter } from './routes/plants';
 import { submissionsRouter } from './routes/submissions';
 
@@ -23,6 +24,7 @@ export function createApp() {
   app.use('/api', requireApiKey);
   app.use('/api/plants', plantsRouter);
   app.use('/api/submissions', submissionsRouter);
+  app.use('/api/place-name', placeNameRouter);
 
   app.use(notFound);
   app.use(errorHandler);

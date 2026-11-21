@@ -46,6 +46,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       API_KEY: ${API_KEY:?set API_KEY in .env}
       UPLOAD_DIR: /app/uploads
+      GEOCODER_URL: ${GEOCODER_URL:-https://nominatim.openstreetmap.org/reverse}
     volumes:
       - uploads:/app/uploads
     networks: [private, proxy]

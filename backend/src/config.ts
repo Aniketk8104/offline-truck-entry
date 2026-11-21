@@ -12,6 +12,7 @@ const envSchema = z.object({
   POSTGRES_DB: z.string().min(1),
   API_KEY: z.string().min(16),
   UPLOAD_DIR: z.string().min(1).default('uploads'),
+  GEOCODER_URL: z.url().default('https://nominatim.openstreetmap.org/reverse'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 });
 
@@ -28,6 +29,7 @@ export const config = {
   apiKey: env.API_KEY,
   logLevel: env.LOG_LEVEL,
   uploadDir: path.resolve(env.UPLOAD_DIR), // truck photos, one file per submission
+  geocoderUrl: env.GEOCODER_URL, // Nominatim-compatible reverse geocoding, for place names
 
   db: {
     host: env.POSTGRES_HOST,

@@ -15,7 +15,7 @@ Ground Up technical assignment (Full Stack Developer), Problem 2: Offline Androi
 - **A Node.js API** (Express 5, TypeScript) that stores each entry in **PostgreSQL 16** and its photo on disk. Sending the same entry twice never creates a second row.
 - **Docker Compose files** that start the API and the database with one command, on a laptop or on a server behind HTTPS.
 
-The APK talks to a hosted copy of the API over HTTPS, so it works on mobile data or any Wi-Fi.
+The APK talks to a hosted copy of the API over HTTPS, so it works on mobile data or any Wi-Fi. See [Deployment](#deployment-where-and-how-the-demo-runs) for where it runs and how.
 
 **Where the data lives:** PostgreSQL is the database, and every entry ends up there. The phone only holds an entry until it has been sent. The brief asks for offline submissions to be saved on the phone, and PostgreSQL can't run on a phone, so the app keeps them in a small SQLite outbox. Once the server confirms an entry, the phone marks it *Sent* (it stays in History as a receipt) and deletes its photo.
 
@@ -36,6 +36,20 @@ The brief asks for a mobile framework that fits a Next.js and Node.js team.
 - **Maintained Expo modules for everything this app needs:** SQLite, camera, location, secure random numbers and SHA-256, the file system, and background tasks (Android WorkManager underneath).
 
 Other options I considered: native Kotlin has the best Android integration, but it is a second language and toolchain for a web team. Flutter uses Dart, also a separate stack. A web app (PWA) would reuse the most Next.js code, but the brief asks for an APK, and a browser can't promise to send data after the app is closed.
+
+## Tech stack
+
+| Part | Used |
+|---|---|
+| Mobile app | Expo SDK 58, React Native 0.88, React 19, TypeScript |
+| Storage on the phone | `expo-sqlite` (entries waiting to be sent, plants, PIN lock), `expo-file-system` (photos) |
+| Phone features | `expo-image-picker` (camera), `expo-image-manipulator` (resize), `expo-location` (GPS), `expo-crypto` (UUID, OTP, SHA-256), `@react-native-community/netinfo` (online or offline), `expo-background-task` and `expo-task-manager` (sync while the app is closed) |
+| APK build | EAS Build (Expo's cloud build), `expo-build-properties`, `expo-splash-screen`, `expo-system-ui` |
+| API | Node.js 24, Express 5, TypeScript, `pg` (PostgreSQL driver), `zod` (input checks), `multer` (photo upload), `pino` (logs) |
+| Database | PostgreSQL 16 |
+| Tests | Jest and supertest, against a real test database |
+| Running and hosting | Docker, Docker Compose v2, Traefik v2.11 with Let's Encrypt certificates, an Oracle Cloud VM (Ubuntu 22.04, ARM64) |
+| Place names | OpenStreetMap Nominatim, through the API |
 
 ## Offline storage on the phone
 
@@ -210,7 +224,7 @@ To reach this local API from a phone on the same Wi-Fi, set `API_BIND=0.0.0.0` i
 
 ### Hosting with HTTPS
 
-The demo API runs with [`docker-compose.server.yml`](docker-compose.server.yml) on a cloud VM behind an existing Traefik reverse proxy, which gets a Let's Encrypt certificate for the API's domain. It is its own Compose project: the database has no published port and sits on an internal network, each container is limited to 0.5 CPU and 256 MB, and logs are rotated. The server's `.env` sets the passwords, the API key and the domain (the comments at the top of the file list them). None of them are in this repo.
+The hosted copy that the APK uses runs with [`docker-compose.server.yml`](docker-compose.server.yml). Where it runs, how it is built and how it was deployed are in [Deployment](#deployment-where-and-how-the-demo-runs).
 
 ## Install the app
 
@@ -244,6 +258,95 @@ npx eas-cli env:create --environment preview --name EXPO_PUBLIC_API_URL --value 
 npx eas-cli env:create --environment preview --name EXPO_PUBLIC_API_KEY --value <your API_KEY> --type string --visibility sensitive
 npx eas-cli build --platform android --profile preview
 ```
+
+EAS uploads `app/` (without gitignored files), generates the native Android project, compiles it, signs it with a keystore it keeps for the project, and returns a download link. That file is the APK on the release page. The API address and key are written into the app at build time, so a new server address needs a new build.
+
+## Deployment: where and how the demo runs
+
+### How it works right now
+
+The APK on the release page is a finished, standalone app. Its API address and key were built in, so once it is installed nothing else needs to run:
+
+1. The phone saves each entry in SQLite and shows the OTP, online or offline.
+2. When the phone is online, the sync sends the entry over HTTPS to the hosted API.
+3. Traefik on the server receives the request, handles HTTPS, and passes it to the API container.
+4. The API checks the entry, saves the row in PostgreSQL and the photo in the `uploads` volume, and answers 201 (or 200 for a retry).
+5. The phone marks the entry *Sent* and deletes its copy of the photo.
+
+Every entry from my phone tests is in the hosted PostgreSQL exactly once: the number of rows equals the number of unique ids.
+
+### Where
+
+| | |
+|---|---|
+| Machine | An Oracle Cloud (OCI) virtual machine: Ubuntu 22.04 LTS, ARM64 (aarch64), 2 CPUs. Other apps run on the same VM, so this project is kept fully separate from them (see below). |
+| Reverse proxy | Traefik v2.11, already running on the VM. It owns ports 80 and 443 and gets Let's Encrypt certificates. |
+| Address | A subdomain of my own domain, with a DNS A record pointing to the VM. HTTPS only, because Android release builds block plain HTTP. |
+| Software | Docker Engine 29 with Compose v2 |
+| Folder | `/opt/offline-truck-entry` |
+
+### Server structure
+
+```mermaid
+flowchart LR
+    phone["Android phone<br/>Truck Entry APK<br/>SQLite outbox"]
+    osm["OpenStreetMap<br/>Nominatim"]
+    subgraph vm["Oracle Cloud VM: Ubuntu 22.04, ARM64, Docker"]
+        traefik["Traefik v2.11<br/>shared reverse proxy<br/>HTTPS on 443, Let's Encrypt"]
+        subgraph project["Compose project offline-truck-entry"]
+            api["truck-entry-api<br/>Node.js 24 + Express 5<br/>0.5 CPU, 256 MB"]
+            db[("truck-entry-db<br/>PostgreSQL 16<br/>0.5 CPU, 256 MB")]
+            uploads[/"volume uploads<br/>one photo per entry"/]
+            dbdata[/"volume db-data"/]
+        end
+    end
+    phone -- "HTTPS + x-api-key" --> traefik
+    traefik -- "proxy network, port 3000" --> api
+    api -- "private internal network" --> db
+    api --- uploads
+    db --- dbdata
+    api -- "place names, at most 1 per second" --> osm
+```
+
+On the server:
+
+```
+/opt/offline-truck-entry/
+├── .env                        passwords, API key, domain, proxy network (chmod 600; only on the server)
+├── docker-compose.server.yml   from this repo
+└── backend/                    from this repo: Dockerfile, src/, migrations/
+```
+
+### How Docker is used
+
+| Container | Built from | Job | Networks | Data |
+|---|---|---|---|---|
+| `truck-entry-api` | [`backend/Dockerfile`](backend/Dockerfile), built on the server | the Express API on port 3000. The port isn't published; only Traefik reaches it. | `proxy` (Traefik's) and `private` | volume `uploads` at `/app/uploads` |
+| `truck-entry-db` | `postgres:16-alpine` | PostgreSQL 16 | `private` only | volume `db-data` |
+
+- **The image** is built in two stages: the first installs every package and compiles the TypeScript, the second holds only the production packages and the compiled JavaScript, and runs as the unprivileged `node` user. `node:24-alpine` and `postgres:16-alpine` are multi-architecture images, so the same files build on the ARM server and on an x86 laptop.
+- **Networks.** `private` is an `internal` Docker network: no published port and no internet, so only the API can reach the database. The API also joins Traefik's network, which is the only thing shared with the rest of the VM and also gives the API outside access for place names.
+- **HTTPS and routing** come from labels on the API container (`traefik.http.routers.truck-entry.*`). Traefik reads them from Docker, sends requests for the domain to port 3000 and gets the certificate. No Traefik configuration file was edited, and the route disappears when the container is removed.
+- **Health checks.** Postgres is checked with `pg_isready`, the API with `GET /health`, which also queries the database. The API starts only once the database is healthy, and `--wait` makes the deploy command wait until both are healthy.
+- **Sharing the VM safely.** Each container is limited to 0.5 CPU and 256 MB (each uses about 40 MB). Logs rotate at 3 × 10 MB. `restart: unless-stopped` brings both back after a reboot. Service names are unique, so they can't clash with other containers on the proxy network.
+- **Data** is in named volumes, so rebuilding or recreating the containers keeps the entries and the photos.
+- **Database setup.** On the first start Postgres runs the files in [`backend/migrations`](backend/migrations): the tables, the two plants, and the place-name column. A migration file added later is applied by hand with `psql`.
+
+### How it was deployed
+
+1. Added a DNS A record for the subdomain, pointing to the VM.
+2. Copied `backend/` and `docker-compose.server.yml` into `/opt/offline-truck-entry` with `git archive` and `scp`, so only committed files reach the server.
+3. Wrote the server's `.env` with long random values made on my laptop (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `API_KEY`), plus `PUBLIC_HOST`, `PROXY_NETWORK`, and `COMPOSE_FILE=docker-compose.server.yml` so plain `docker compose` commands use the server file. Then `chmod 600 .env`.
+4. Started it:
+   ```bash
+   cd /opt/offline-truck-entry
+   docker compose up -d --build --wait
+   ```
+5. Checked it: `GET /health` answers `{"status":"ok"}` over HTTPS, `/api/plants` with the key returns the two plants, a wrong key gets 401, the certificate is from Let's Encrypt, and the VM's other containers kept running untouched.
+
+**Updating:** copy the new `backend/`, apply any new migration file with `psql`, then run `docker compose up -d --build --wait` again. Only the API image is rebuilt and restarted; the data stays.
+
+**Removing:** `docker compose down -v` deletes the containers, the volumes and the route.
 
 ## API
 
@@ -304,7 +407,7 @@ They cover a new entry (201) with its photo on disk; **the same entry sent twice
   ```
 - The PIN is checked on the phone so the form opens offline. A 4-digit PIN has only 10,000 values, so someone who copies the hash off the phone can find the PIN. The hash only keeps PINs out of plain text, and the lockout limits guessing in the app. A real deployment would use per-user logins when online.
 - The OTP is a receipt code made on the phone. It isn't sent by SMS or checked by the server; offline there is nothing to send it through.
-- The API key is built into the APK. It keeps casual traffic and bots out, but anyone who unpacks the APK can read it. Production would register each device or log users in and give each one its own token.
+- The API key is built into the APK. It keeps casual traffic and bots out, but anyone who unpacks the APK can read it and then use the read endpoints (`GET /api/submissions` and the photos) as well. Production would register each device or log users in and give each one its own token.
 - `captured_at` comes from the phone's clock and `received_at` from the server's. Changing the phone's clock could also shorten the PIN lockout.
 - The truck-number check is loose (4 to 12 letters or digits after removing spaces, dots and dashes), so an unusual plate never blocks a truck at the gate. The photo shows the real plate.
 - A plant marked inactive still accepts entries that were made offline before, so nothing recorded at the gate is lost.

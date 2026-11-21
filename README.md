@@ -17,6 +17,8 @@ Ground Up technical assignment (Full Stack Developer), Problem 2: Offline Androi
 
 The APK talks to a hosted copy of the API over HTTPS, so it works on mobile data or any Wi-Fi.
 
+**Where the data lives:** PostgreSQL is the database, and every entry ends up there. The phone only holds an entry until it has been sent. The brief asks for offline submissions to be saved on the phone, and PostgreSQL can't run on a phone, so the app keeps them in a small SQLite outbox. Once the server confirms an entry, the phone marks it *Sent* (it stays in History as a receipt) and deletes its photo.
+
 ## App flow
 
 1. **Open the app.** It asks for camera and location permission. The camera is required, because the photo is mandatory. Location is optional: without it, entries are saved and marked "location not allowed".
@@ -37,7 +39,7 @@ Other options I considered: native Kotlin has the best Android integration, but 
 
 ## Offline storage on the phone
 
-Everything is kept in the app's private storage, so it survives closing the app and restarting the phone.
+The phone keeps only what has to work without a network: entries waiting to be sent to PostgreSQL, the plant list for the PIN check, and the PIN lock. It is all in the app's private storage, so it survives closing the app and restarting the phone.
 
 - **SQLite** (`expo-sqlite`): one database file with four tables.
   - `submissions`: one row per entry. All form fields, the OTP, the path of the photo file, and the sync state: `status` (`pending`, `synced` or `failed`), `attempts`, `next_attempt_at`, `last_error`.

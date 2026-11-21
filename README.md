@@ -2,7 +2,7 @@
 
 **Download the APK:** [truck-entry-1.0.0.apk](https://github.com/Aniketk8104/offline-truck-entry/releases/download/v1.0.0/truck-entry-1.0.0.apk) (from the [v1.0.0 release](https://github.com/Aniketk8104/offline-truck-entry/releases/tag/v1.0.0))
 
-**Demo video:** TODO add the link
+**Demo video:** [watch on Google Drive](https://drive.google.com/file/d/1Sm-V76gItZIU5qzCWKfgrFH135AEGioW/view?usp=sharing)
 
 **PINs to try:** Kolhapur `1234`, UP `4567`
 
@@ -376,20 +376,23 @@ npm test
 
 They cover a new entry (201) with its photo on disk; **the same entry sent twice: one row, 200 the second time**; **two copies at the same moment: one row**; truck-number clean-up; entries with `unavailable`, `denied` and `last_known` locations; every missing field named; a wrong OTP, name, truck number, coordinate, id or location combination (400); a value that only the database refuses (400, not 500); an unknown plant; a file that isn't an image; a photo over 8 MB (413); a wrong API key (401); the list and the photo download; the seeded PIN hashes matching only 1234 for Kolhapur and 4567 for UP; and place names, with OpenStreetMap replaced by a fixed answer.
 
-**On a phone** (a Xiaomi Android phone, with the APK):
+**On a phone** (a Xiaomi Android phone, with the APK; most of it is in the demo video):
 
-| # | Test | Expected | Result |
+| # | Test | What happened | Result |
 |---|---|---|---|
 | 1 | Install, open, allow both permissions | The plant screen opens | ✓ |
 | 2 | Submit an entry while online | OTP shown; the entry, photo, position and OTP reach PostgreSQL | ✓ |
-| 3 | Fresh install, deny the camera | *Not allowed*, with *Allow camera* or *Open settings*; the form can't open | pending |
-| 4 | Deny location, continue | Entry saved as "location not allowed" | pending |
-| 5 | Wrong PIN 5 times, then close and reopen the app | Locked with a countdown, still locked after reopening | pending |
-| 6 | Flight mode on, submit 3 entries | 3 OTPs; the header says "Offline · 3 waiting" | pending |
-| 7 | Restart the phone, network on, open the app | All 3 marked *Sent*; 3 rows in PostgreSQL, with place names | pending |
-| 8 | Stop the API, submit, start the API, *Send now* | Waiting with an error, then *Sent*; one row | pending |
-| 9 | Location off, open the form, *Turn on location* | The position appears by itself | pending |
-| 10 | Entries waiting, app swiped away, network on, wait 20 minutes | The background task sends them | pending |
+| 3 | Wrong PINs for UP | "Wrong PIN for UP. 2 tries left.", then after the fifth: "Too many wrong PINs for UP. Try again in 4:50." | ✓ video |
+| 4 | Location switched off, open the form, *Turn on location* | Android's "Turn on" dialog, then the search restarts by itself; the entry was saved with a GPS position | ✓ video |
+| 5 | Flight mode on, submit an entry | OTP shown; the header says "Offline"; History says "1 waiting" | ✓ video |
+| 6 | Flight mode off | The header changes to "All sent". The row is in PostgreSQL (made 16:31:11, received 16:31:21), with a place name looked up when it was sent | ✓ video, screenshot |
+| 7 | Compare rows with unique ids on the server | 10 rows, 10 unique ids: nothing was saved twice | ✓ screenshot |
+
+Not run on a phone yet: denying a permission, the PIN lock surviving an app restart, a phone restart before sync, the API going down mid-send, and the background task with the app closed. The edge-case table above describes what the code does in each case, and the backend tests cover the duplicate case.
+
+The demo's rows, read from PostgreSQL on the hosted server after the network came back, and the newest photo files:
+
+![Rows from the demo in PostgreSQL on the hosted server: 10 rows, 10 unique ids, and the newest photo files](docs/database-proof.jpg)
 
 ## Problems found while testing on a phone
 
